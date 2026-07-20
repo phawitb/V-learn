@@ -10,8 +10,10 @@ from pymongo.database import Database
 
 from database import get_db
 
-# Dev-only secret. Rotate and load from env before any real deployment.
-SECRET_KEY = "v-learn-dev-secret-change-me"
+# Falls back to a dev-only value so local runs don't need a .env entry —
+# production must set SECRET_KEY explicitly (a hardcoded secret in a public
+# repo lets anyone forge a valid login token for any user).
+SECRET_KEY = os.environ.get("SECRET_KEY", "v-learn-dev-secret-change-me")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_DAYS = 7
 
