@@ -12,13 +12,13 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// Thin REST client for the FastAPI backend in `backend/`. Run it locally
-/// with `uvicorn main:app --port 8000` — see backend/README notes.
+/// Thin REST client for the FastAPI backend in `backend/`, deployed on
+/// Render (see render.yaml at the repo root).
 class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
 
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  static const String baseUrl = 'https://v-learn-backend-mphn.onrender.com';
 
   String? token;
 

@@ -141,13 +141,20 @@ def start_exam(
     questions_by_id = {q["id"]: q for q in db.questions.find({"id": {"$in": question_ids}}, batch_size=10000)}
     subject_by_qid = {mq["question_id"]: mq["subject_title"] for mq in mock_questions}
 
+    resume_question_id = None
     if existing is not None:
         attempt = existing
-        saved_answers = {
-            a["question_id"]: a["selected_index"]
-            for a in db.mock_exam_answers.find({"attempt_id": attempt["id"]}, batch_size=10000)
-            if a["selected_index"] is not None
-        }
+        saved_answers = {}
+        latest_updated_at = None
+        for a in db.mock_exam_answers.find({"attempt_id": attempt["id"]}, batch_size=10000):
+            if a["selected_index"] is not None:
+                saved_answers[a["question_id"]] = a["selected_index"]
+            # Resume on whichever question was most recently answered, so
+            # reopening an in-progress attempt picks up right where the
+            # learner left off instead of always starting back at question 1.
+            if latest_updated_at is None or a["updated_at"] > latest_updated_at:
+                latest_updated_at = a["updated_at"]
+                resume_question_id = a["question_id"]
     else:
         attempt = {
             "id": next_id("mock_exam_attempts"),
@@ -182,6 +189,7 @@ def start_exam(
             for qid in question_ids
             if qid in questions_by_id
         ],
+        resume_question_id=resume_question_id,
     )
 
 

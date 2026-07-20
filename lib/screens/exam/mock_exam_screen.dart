@@ -43,6 +43,14 @@ class _MockExamScreenState extends State<MockExamScreen> {
     _answers = Map.of(_start.answers);
     _subjectOrder = _questions.map((q) => q.subjectTitle).toList();
 
+    // Reopening an in-progress attempt picks up on whichever question was
+    // most recently answered, instead of always starting back at question 1.
+    final resumeId = _start.resumeQuestionId;
+    if (resumeId != null) {
+      final resumeIndex = _questions.indexWhere((q) => q.id == resumeId);
+      if (resumeIndex != -1) _index = resumeIndex;
+    }
+
     final elapsed = DateTime.now().toUtc().difference(_start.startedAt).inSeconds;
     _remainingSeconds = (_start.durationMinutes * 60 - elapsed).clamp(0, _start.durationMinutes * 60);
 

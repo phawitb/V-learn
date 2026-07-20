@@ -214,6 +214,7 @@ class MockExamStartResponse(BaseModel):
     started_at: datetime.datetime
     answers: dict[str, int]
     questions: List[ExamQuestionOut]
+    resume_question_id: Optional[str] = None
 
 
 class MockExamSubmitRequest(BaseModel):

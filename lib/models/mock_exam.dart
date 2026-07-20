@@ -116,6 +116,7 @@ class MockExamStart {
   final DateTime startedAt;
   final Map<String, int> answers;
   final List<ExamQuestion> questions;
+  final String? resumeQuestionId;
 
   const MockExamStart({
     required this.attemptId,
@@ -125,6 +126,7 @@ class MockExamStart {
     required this.startedAt,
     required this.answers,
     required this.questions,
+    this.resumeQuestionId,
   });
 
   factory MockExamStart.fromJson(Map<String, dynamic> json) => MockExamStart(
@@ -135,6 +137,7 @@ class MockExamStart {
         startedAt: DateTime.parse('${json['started_at']}Z'),
         answers: Map<String, int>.from(json['answers'] as Map),
         questions: (json['questions'] as List).map((q) => ExamQuestion.fromJson(q as Map<String, dynamic>)).toList(),
+        resumeQuestionId: json['resume_question_id'] as String?,
       );
 }
 
