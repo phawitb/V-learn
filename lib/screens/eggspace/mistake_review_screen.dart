@@ -35,19 +35,31 @@ class _MistakeReviewScreenState extends State<MistakeReviewScreen> {
 
   Future<_LoadedVariants> _load() async {
     final appState = context.read<AppState>();
-    final results = await Future.wait(
-      widget.mistakes.map(
-        (m) => appState.fetchVariantQuestions(m.topicTag, excludeQuestionId: m.questionId),
-      ),
-    );
+    // topic_tag is subject-wide (every mistake in this subject shares the
+    // same value), so fetching it separately per mistake — as this used to —
+    // returned the same overlapping pool every time. Since Mongo has no
+    // explicit sort here, the "first" row was deterministically identical
+    // across calls, so every mistake silently landed on the same variant
+    // question unless it happened to be the one excluded. Fetch the pool
+    // once and hand out a distinct question per mistake instead.
+    final pool = await appState.fetchVariantQuestions(widget.mistakes.first.topicTag);
 
+    final assigned = <String>{};
     final questions = <Question>[];
     final originalIdByVariantId = <String, String>{};
-    for (var i = 0; i < results.length; i++) {
-      if (results[i].isEmpty) continue;
-      final variant = results[i].first;
-      questions.add(variant);
-      originalIdByVariantId[variant.id] = widget.mistakes[i].questionId;
+    for (final mistake in widget.mistakes) {
+      if (pool.isEmpty) continue;
+      // Prefer a question that's neither the mistake's own original nor
+      // already handed to an earlier mistake in this batch; fall back to
+      // just "not the original" (a repeat across mistakes, but never the
+      // exact question just missed) if the subject's pool is that small.
+      final candidate = pool.firstWhere(
+        (q) => q.id != mistake.questionId && !assigned.contains(q.id),
+        orElse: () => pool.firstWhere((q) => q.id != mistake.questionId, orElse: () => pool.first),
+      );
+      assigned.add(candidate.id);
+      questions.add(candidate);
+      originalIdByVariantId[candidate.id] = mistake.questionId;
     }
     return _LoadedVariants(questions, originalIdByVariantId);
   }

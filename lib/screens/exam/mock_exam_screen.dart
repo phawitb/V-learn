@@ -176,6 +176,33 @@ class _MockExamScreenState extends State<MockExamScreen> {
     );
   }
 
+  Future<void> _confirmReset(BuildContext sheetContext) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('เริ่มข้อสอบใหม่?'),
+        content: const Text('คำตอบที่ทำค้างไว้ในความพยายามนี้จะถูกลบทั้งหมด'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('ยกเลิก')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+            child: const Text('เริ่มใหม่'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    if (sheetContext.mounted) Navigator.pop(sheetContext);
+    _ticker?.cancel();
+    setState(() => _submitting = true);
+    final fresh = await context.read<AppState>().startMockExam(_start.examSetId, restart: true);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => MockExamScreen(start: fresh)),
+    );
+  }
+
   void _showQuestionPicker() {
     showModalBottomSheet(
       context: context,
@@ -190,7 +217,16 @@ class _MockExamScreenState extends State<MockExamScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('สารบัญ · ${_start.title}', style: Theme.of(context).textTheme.titleMedium),
+              Row(
+                children: [
+                  Expanded(child: Text('สารบัญ · ${_start.title}', style: Theme.of(context).textTheme.titleMedium)),
+                  IconButton(
+                    icon: const Icon(Icons.restart_alt_rounded, color: AppColors.red),
+                    tooltip: 'เริ่มข้อสอบใหม่',
+                    onPressed: () => _confirmReset(sheetContext),
+                  ),
+                ],
+              ),
               const SizedBox(height: 4),
               Text('ทำแล้ว ${_answers.length}/${_questions.length} ข้อ', style: const TextStyle(fontSize: 12, color: AppColors.inkFaint)),
               const SizedBox(height: 14),

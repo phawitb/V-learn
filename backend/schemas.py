@@ -52,6 +52,7 @@ class QuestionOut(BaseModel):
     is_correct: bool
     saved: bool
     reported: bool
+    selected_index: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -134,11 +135,16 @@ class PositionUpdateRequest(BaseModel):
 
 class AnswerRecordRequest(BaseModel):
     is_correct: bool
+    selected_index: Optional[int] = None
 
 
 class AnswerRecordResponse(BaseModel):
     egg_balance: int
     awarded: bool
+
+
+class ResetProgressRequest(BaseModel):
+    question_ids: List[str]
 
 
 class QuestionReportRequest(BaseModel):

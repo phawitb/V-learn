@@ -98,9 +98,21 @@ def record_answer(
     if question is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
 
-    awarded = serializers.record_node_answer(db, current_user, question, payload.is_correct)
+    awarded = serializers.record_node_answer(db, current_user, question, payload.is_correct, payload.selected_index)
     user = db.users.find_one({"id": current_user["id"]})
     return schemas.AnswerRecordResponse(egg_balance=user["egg_balance"], awarded=awarded)
+
+
+@router.post("/reset-progress", status_code=status.HTTP_204_NO_CONTENT)
+def reset_progress(
+    payload: schemas.ResetProgressRequest,
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(auth.get_current_user),
+):
+    """Clears answered/correct state for the given questions (used by the
+    สารบัญ "reset" button) — leaves saved/reported flags untouched, since
+    those are separate, deliberate actions rather than "progress"."""
+    db.node_answers.delete_many({"user_id": current_user["id"], "question_id": {"$in": payload.question_ids}})
 
 
 @router.post("/{question_id}/save", status_code=status.HTTP_204_NO_CONTENT)

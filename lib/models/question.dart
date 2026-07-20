@@ -32,7 +32,7 @@ class Question {
     this.subjectLabel,
   });
 
-  Question copyWith({bool? answered, bool? isCorrect, bool? saved, bool? reported}) => Question(
+  Question copyWith({bool? answered, bool? isCorrect, bool? saved, bool? reported, int? selectedIndex}) => Question(
         id: id,
         topicTag: topicTag,
         prompt: prompt,
@@ -43,7 +43,22 @@ class Question {
         isCorrect: isCorrect ?? this.isCorrect,
         saved: saved ?? this.saved,
         reported: reported ?? this.reported,
-        selectedIndex: selectedIndex,
+        selectedIndex: selectedIndex ?? this.selectedIndex,
+        subjectLabel: subjectLabel,
+      );
+
+  /// Back to unanswered — unlike [copyWith], this actually clears
+  /// [selectedIndex] rather than preserving it (used by the สารบัญ "reset"
+  /// button, where the whole point is to forget the previous answer).
+  Question cleared() => Question(
+        id: id,
+        topicTag: topicTag,
+        prompt: prompt,
+        choices: choices,
+        correctIndex: correctIndex,
+        stepSolution: stepSolution,
+        saved: saved,
+        reported: reported,
         subjectLabel: subjectLabel,
       );
 
@@ -58,5 +73,6 @@ class Question {
         isCorrect: json['is_correct'] as bool? ?? false,
         saved: json['saved'] as bool? ?? false,
         reported: json['reported'] as bool? ?? false,
+        selectedIndex: json['selected_index'] as int?,
       );
 }

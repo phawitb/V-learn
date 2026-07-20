@@ -111,17 +111,26 @@ def build_question_out(q: dict, answer: Optional[dict], saved: bool, reported: b
         is_correct=bool(answer and answer.get("is_correct")),
         saved=saved,
         reported=reported,
+        selected_index=answer.get("selected_index") if answer else None,
     )
 
 
-def record_node_answer(db: Database, user: dict, question: dict, is_correct: bool) -> bool:
+def record_node_answer(
+    db: Database,
+    user: dict,
+    question: dict,
+    is_correct: bool,
+    selected_index: Optional[int] = None,
+) -> bool:
     """Upsert the NodeAnswer for (user, question) and award eggs the first
     time it's answered. Returns True if eggs were just awarded. Shared by
     the normal per-question answer endpoint and the daily egg challenge, so
     both feed the same progress tracking."""
     existing = db.node_answers.find_one({"user_id": user["id"], "question_id": question["id"]})
     if existing is not None:
-        db.node_answers.update_one({"_id": existing["_id"]}, {"$set": {"is_correct": is_correct}})
+        db.node_answers.update_one(
+            {"_id": existing["_id"]}, {"$set": {"is_correct": is_correct, "selected_index": selected_index}}
+        )
         return False
 
     db.node_answers.insert_one(
@@ -131,6 +140,7 @@ def record_node_answer(db: Database, user: dict, question: dict, is_correct: boo
             "node_id": question["node_id"],
             "question_id": question["id"],
             "is_correct": is_correct,
+            "selected_index": selected_index,
             "answered_at": datetime.datetime.utcnow(),
         }
     )

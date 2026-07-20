@@ -199,9 +199,12 @@ class AppState extends ChangeNotifier {
   /// point) and awards eggs the first time this question is answered.
   /// Returns true if eggs were just awarded, so the caller can decide
   /// whether to show a reward cue.
-  Future<bool> recordAnswer(String questionId, bool isCorrect) async {
+  Future<bool> recordAnswer(String questionId, bool isCorrect, {int? selectedIndex}) async {
     try {
-      final res = await _api.post('/questions/$questionId/answer', body: {'is_correct': isCorrect});
+      final res = await _api.post('/questions/$questionId/answer', body: {
+        'is_correct': isCorrect,
+        'selected_index': selectedIndex,
+      });
       final newBalance = res['egg_balance'] as int;
       final awarded = res['awarded'] as bool;
       if (currentUser != null) {
@@ -238,6 +241,12 @@ class AppState extends ChangeNotifier {
   Future<List<Question>> fetchQuestionsByIds(List<String> ids) async {
     final res = await _api.get('/questions/by-ids?ids=${ids.join(',')}') as List;
     return res.map((q) => Question.fromJson(q as Map<String, dynamic>)).toList();
+  }
+
+  /// Clears answered/correct state for these questions (สารบัญ's reset
+  /// button) so they can be redone from scratch.
+  Future<void> resetProgress(List<String> questionIds) async {
+    await _api.post('/questions/reset-progress', body: {'question_ids': questionIds});
   }
 
   // ---------------- Mistake Hunter ----------------

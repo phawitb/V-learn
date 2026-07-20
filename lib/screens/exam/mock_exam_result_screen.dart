@@ -8,26 +8,18 @@ import '../eggspace/step_solution_screen.dart';
 
 /// Score summary after a mock exam attempt (fresh submit or a past one
 /// pulled from ทบทวน's history). "ดูเฉลยรายข้อ" opens the exact same
-/// per-question review UI as normal practice mode, just pre-answered —
-/// see [StepSolutionScreen]'s doc comment. A toggle switches that review
-/// between all questions and only the ones answered wrong.
-class MockExamResultScreen extends StatefulWidget {
+/// per-question review UI as normal practice mode, just pre-answered — see
+/// [StepSolutionScreen]'s doc comment. The "show only wrong" filter lives
+/// inside that screen's สารบัญ (via [StepSolutionScreen.showWrongOnlyFilter])
+/// rather than as a pre-filter here, so it can be toggled after entering
+/// the review instead of only before.
+class MockExamResultScreen extends StatelessWidget {
   final MockExamResult result;
 
   const MockExamResultScreen({super.key, required this.result});
 
-  @override
-  State<MockExamResultScreen> createState() => _MockExamResultScreenState();
-}
-
-class _MockExamResultScreenState extends State<MockExamResultScreen> {
-  bool _onlyWrong = false;
-
-  MockExamResult get result => widget.result;
-
   List<Question> _buildReviewQuestions() {
-    final source = _onlyWrong ? result.questions.where((q) => !q.isCorrect) : result.questions;
-    return source
+    return result.questions
         .map(
           (q) => Question(
             id: q.id,
@@ -69,7 +61,6 @@ class _MockExamResultScreenState extends State<MockExamResultScreen> {
   Widget build(BuildContext context) {
     final percent = result.total == 0 ? 0.0 : result.score / result.total;
     final subjects = _buildSubjectScores();
-    final wrongCount = result.questions.where((q) => !q.isCorrect).length;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -126,49 +117,23 @@ class _MockExamResultScreenState extends State<MockExamResultScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
+          child: ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => StepSolutionScreen(
+                    courseId: '',
+                    questions: _buildReviewQuestions(),
+                    reviewTitle: 'ผลสอบ',
+                    trackProgress: false,
+                    allowReset: false,
+                    showWrongOnlyFilter: true,
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'แสดงเฉพาะข้อที่ทำผิด ($wrongCount ข้อ)',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.ink),
-                      ),
-                    ),
-                    Switch(
-                      value: _onlyWrong,
-                      onChanged: wrongCount == 0 ? null : (value) => setState(() => _onlyWrong = value),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => StepSolutionScreen(
-                        courseId: '',
-                        questions: _buildReviewQuestions(),
-                        reviewTitle: 'ผลสอบ',
-                        trackProgress: false,
-                      ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.fact_check_outlined, size: 18),
-                label: const Text('ดูเฉลยรายข้อ'),
-              ),
-            ],
+              );
+            },
+            icon: const Icon(Icons.fact_check_outlined, size: 18),
+            label: const Text('ดูเฉลยรายข้อ'),
           ),
         ),
       ),

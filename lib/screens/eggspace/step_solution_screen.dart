@@ -53,6 +53,17 @@ class StepSolutionScreen extends StatefulWidget {
   final bool trackProgress;
   final void Function(Question question, bool correct)? onAnswered;
 
+  /// Whether สารบัญ shows a "reset" button that clears node_answers for
+  /// every question in this list. Off for read-only historical review (a
+  /// past mock exam's "ดูเฉลยรายข้อ") — that data lives in a different
+  /// table entirely, so resetting node_answers there wouldn't touch what's
+  /// actually on screen.
+  final bool allowReset;
+
+  /// Whether สารบัญ shows a "แสดงเฉพาะข้อที่ทำผิด" toggle that filters which
+  /// circles appear (used by the mock exam result review).
+  final bool showWrongOnlyFilter;
+
   const StepSolutionScreen({
     super.key,
     required this.courseId,
@@ -63,6 +74,8 @@ class StepSolutionScreen extends StatefulWidget {
     this.reviewTitle,
     this.trackProgress = true,
     this.onAnswered,
+    this.allowReset = true,
+    this.showWrongOnlyFilter = false,
   });
 
   @override
@@ -147,10 +160,10 @@ class _StepSolutionScreenState extends State<StepSolutionScreen> {
     final correct = _isCorrect && !_unsure;
     if (correct) _correctCount++;
     if (widget.trackProgress) {
-      context.read<AppState>().recordAnswer(_current.id, correct);
+      context.read<AppState>().recordAnswer(_current.id, correct, selectedIndex: _selected);
     }
     setState(() {
-      _questions[_index] = _current.copyWith(answered: true, isCorrect: correct);
+      _questions[_index] = _current.copyWith(answered: true, isCorrect: correct, selectedIndex: _selected);
     });
     if (widget.trackProgress && wrongOrUnsure) {
       context.read<AppState>().logMistake(
@@ -259,57 +272,127 @@ class _StepSolutionScreenState extends State<StepSolutionScreen> {
     }
   }
 
+  Future<void> _confirmResetProgress(BuildContext sheetContext) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('รีเซ็ตความคืบหน้า?'),
+        content: const Text('ล้างคำตอบที่ทำไว้ทั้งหมดในชุดนี้ ไม่สามารถย้อนกลับได้'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('ยกเลิก')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.red),
+            child: const Text('รีเซ็ต'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    if (sheetContext.mounted) Navigator.pop(sheetContext);
+    await context.read<AppState>().resetProgress(_questions.map((q) => q.id).toList());
+    if (!mounted) return;
+    setState(() {
+      _questions = _questions.map((q) => q.cleared()).toList();
+      _correctCount = 0;
+    });
+    _jumpTo(0);
+  }
+
   void _showQuestionPicker(BuildContext context) {
+    var onlyWrong = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        minChildSize: 0.3,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (_, scrollController) => Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('สารบัญ · ${widget.unit?.title ?? widget.reviewTitle ?? ''}', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 14),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final crossAxisCount = (constraints.maxWidth / 58).floor().clamp(4, 10);
-                    return GridView.builder(
-                      controller: scrollController,
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossAxisCount,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 1,
-                      ),
-                      itemCount: _questions.length,
-                      itemBuilder: (context, i) => Center(
-                        child: QuestionCircle(
-                          number: i + 1,
-                          answered: _questions[i].answered,
-                          isCorrect: _questions[i].isCorrect,
-                          saved: _questions[i].saved,
-                          reported: _questions[i].reported,
-                          subjectColor: _hasMultipleSubjects && _questions[i].subjectLabel != null
-                              ? subjectColorFor(_questions[i].subjectLabel!, _subjectOrder)
-                              : null,
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            _jumpTo(i);
-                          },
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.3,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (_, scrollController) {
+            final indices = [
+              for (var i = 0; i < _questions.length; i++)
+                if (!onlyWrong || (_questions[i].answered && !_questions[i].isCorrect)) i,
+            ];
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'สารบัญ · ${widget.unit?.title ?? widget.reviewTitle ?? ''}',
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
-                    );
-                  },
-                ),
+                      if (widget.allowReset)
+                        IconButton(
+                          icon: const Icon(Icons.restart_alt_rounded, color: AppColors.red),
+                          tooltip: 'รีเซ็ตความคืบหน้า',
+                          onPressed: () => _confirmResetProgress(sheetContext),
+                        ),
+                    ],
+                  ),
+                  if (widget.showWrongOnlyFilter) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text('แสดงเฉพาะข้อที่ทำผิด', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.ink)),
+                        ),
+                        Switch(
+                          value: onlyWrong,
+                          onChanged: (value) => setSheetState(() => onlyWrong = value),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: indices.isEmpty
+                        ? const Center(child: Text('ไม่มีข้อที่ทำผิด', style: TextStyle(color: AppColors.inkFaint)))
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              final crossAxisCount = (constraints.maxWidth / 58).floor().clamp(4, 10);
+                              return GridView.builder(
+                                controller: scrollController,
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: crossAxisCount,
+                                  mainAxisSpacing: 8,
+                                  crossAxisSpacing: 8,
+                                  childAspectRatio: 1,
+                                ),
+                                itemCount: indices.length,
+                                itemBuilder: (context, gridIndex) {
+                                  final i = indices[gridIndex];
+                                  return Center(
+                                    child: QuestionCircle(
+                                      number: i + 1,
+                                      answered: _questions[i].answered,
+                                      isCorrect: _questions[i].isCorrect,
+                                      saved: _questions[i].saved,
+                                      reported: _questions[i].reported,
+                                      subjectColor: _hasMultipleSubjects && _questions[i].subjectLabel != null
+                                          ? subjectColorFor(_questions[i].subjectLabel!, _subjectOrder)
+                                          : null,
+                                      onTap: () {
+                                        Navigator.pop(sheetContext);
+                                        _jumpTo(i);
+                                      },
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
