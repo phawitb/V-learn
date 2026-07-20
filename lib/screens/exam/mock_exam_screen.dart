@@ -55,14 +55,14 @@ class _MockExamScreenState extends State<MockExamScreen> {
     _remainingSeconds = (_start.durationMinutes * 60 - elapsed).clamp(0, _start.durationMinutes * 60);
 
     if (_remainingSeconds <= 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _submit(auto: true));
+      WidgetsBinding.instance.addPostFrameCallback((_) => _submit());
     } else {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         if (_remainingSeconds <= 1) {
           _ticker?.cancel();
           setState(() => _remainingSeconds = 0);
-          _submit(auto: true);
+          _submit();
           return;
         }
         setState(() => _remainingSeconds--);
@@ -76,10 +76,17 @@ class _MockExamScreenState extends State<MockExamScreen> {
     super.dispose();
   }
 
-  String get _formattedTime {
-    final h = (_remainingSeconds ~/ 3600).toString().padLeft(2, '0');
-    final m = ((_remainingSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
-    final s = (_remainingSeconds % 60).toString().padLeft(2, '0');
+  // The review/submit page sits one past the last real question — reachable
+  // both by advancing past the last question and via its own circle in the
+  // สารบัญ grid.
+  bool get _isReview => _index == _questions.length;
+
+  String get _formattedTime => _formatDuration(_remainingSeconds);
+
+  String _formatDuration(int seconds) {
+    final h = (seconds ~/ 3600).toString().padLeft(2, '0');
+    final m = ((seconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
     return '$h:$m:$s';
   }
 
@@ -158,22 +165,8 @@ class _MockExamScreenState extends State<MockExamScreen> {
     }
   }
 
-  Future<void> _submit({bool auto = false}) async {
+  Future<void> _submit() async {
     if (_submitting) return;
-    if (!auto) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('ส่งข้อสอบ?'),
-          content: Text('ทำแล้ว ${_answers.length}/${_questions.length} ข้อ ต้องการส่งข้อสอบเลยหรือไม่'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('ยกเลิก')),
-            ElevatedButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('ส่งข้อสอบ')),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) return;
-    }
     _ticker?.cancel();
     setState(() => _submitting = true);
     final result = await context.read<AppState>().submitMockExam(_start.attemptId, _answers);
@@ -213,8 +206,30 @@ class _MockExamScreenState extends State<MockExamScreen> {
                         crossAxisSpacing: 8,
                         childAspectRatio: 1,
                       ),
-                      itemCount: _questions.length,
+                      // +1 for the review/submit page's own circle at the end.
+                      itemCount: _questions.length + 1,
                       itemBuilder: (context, i) {
+                        if (i == _questions.length) {
+                          return Center(
+                            child: GestureDetector(
+                              onTap: () {
+                                Navigator.pop(sheetContext);
+                                setState(() => _index = i);
+                              },
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: AppColors.red.withValues(alpha: 0.12),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: AppColors.red, width: 1.8),
+                                ),
+                                child: const Icon(Icons.flag_rounded, size: 17, color: AppColors.red),
+                              ),
+                            ),
+                          );
+                        }
                         final answered = _answers.containsKey(_questions[i].id);
                         final color = subjectColorFor(_questions[i].subjectTitle, _subjectOrder);
                         return Center(
@@ -257,8 +272,6 @@ class _MockExamScreenState extends State<MockExamScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final q = _current;
-    final selected = _answers[q.id];
     final lowTime = _remainingSeconds < 300;
 
     return PopScope(
@@ -281,7 +294,7 @@ class _MockExamScreenState extends State<MockExamScreen> {
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
-          title: Text('ข้อ ${_index + 1}/${_questions.length}'),
+          title: Text(_isReview ? 'สรุปก่อนส่งข้อสอบ' : 'ข้อ ${_index + 1}/${_questions.length}'),
           actions: [
             Center(
               child: Container(
@@ -309,19 +322,7 @@ class _MockExamScreenState extends State<MockExamScreen> {
             child: LinearProgressIndicator(value: _answers.length / _questions.length, minHeight: 4),
           ),
         ),
-        body: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
-          children: [
-            Text(
-              q.subjectTitle,
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: subjectColorFor(q.subjectTitle, _subjectOrder)),
-            ),
-            const SizedBox(height: 4),
-            LatexText(q.prompt, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: AppColors.ink, height: 1.4)),
-            const SizedBox(height: 16),
-            for (var i = 0; i < q.choices.length; i++) _choiceTile(q, i, selected),
-          ],
-        ),
+        body: _isReview ? _buildReviewBody() : _buildQuestionBody(),
         bottomNavigationBar: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 16, 10),
@@ -329,42 +330,126 @@ class _MockExamScreenState extends State<MockExamScreen> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 17),
-                  tooltip: 'ข้อก่อนหน้า',
+                  tooltip: 'ก่อนหน้า',
                   color: AppColors.inkFaint,
                   onPressed: _index == 0 ? null : () => setState(() => _index--),
                 ),
-                IconButton(
-                  icon: Icon(
-                    q.saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                    color: q.saved ? AppColors.gold : AppColors.inkFaint,
+                if (!_isReview) ...[
+                  IconButton(
+                    icon: Icon(
+                      _current.saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      color: _current.saved ? AppColors.gold : AppColors.inkFaint,
+                    ),
+                    tooltip: 'บันทึกข้อนี้',
+                    onPressed: _toggleSave,
                   ),
-                  tooltip: 'บันทึกข้อนี้',
-                  onPressed: _toggleSave,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.flag_outlined),
-                  color: AppColors.inkFaint,
-                  tooltip: 'รายงานข้อผิดพลาด',
-                  onPressed: () => _showReportSheet(context),
-                ),
+                  IconButton(
+                    icon: const Icon(Icons.flag_outlined),
+                    color: AppColors.inkFaint,
+                    tooltip: 'รายงานข้อผิดพลาด',
+                    onPressed: () => _showReportSheet(context),
+                  ),
+                ],
                 const SizedBox(width: 6),
                 Expanded(
-                  child: _index == _questions.length - 1
+                  child: _isReview
                       ? ElevatedButton(
                           onPressed: () => _submit(),
                           style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
                           child: const Text('ส่งข้อสอบ'),
                         )
-                      : ElevatedButton(
-                          onPressed: () => setState(() => _index++),
-                          child: const Text('ข้อถัดไป'),
-                        ),
+                      : _index == _questions.length - 1
+                          ? ElevatedButton(
+                              onPressed: () => setState(() => _index++),
+                              style: ElevatedButton.styleFrom(backgroundColor: AppColors.blueDark),
+                              child: const Text('ดูสรุปก่อนส่ง'),
+                            )
+                          : ElevatedButton(
+                              onPressed: () => setState(() => _index++),
+                              child: const Text('ข้อถัดไป'),
+                            ),
                 ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildQuestionBody() {
+    final q = _current;
+    final selected = _answers[q.id];
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
+      children: [
+        Text(
+          q.subjectTitle,
+          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: subjectColorFor(q.subjectTitle, _subjectOrder)),
+        ),
+        const SizedBox(height: 4),
+        LatexText(q.prompt, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: AppColors.ink, height: 1.4)),
+        const SizedBox(height: 16),
+        for (var i = 0; i < q.choices.length; i++) _choiceTile(q, i, selected),
+      ],
+    );
+  }
+
+  Widget _buildReviewBody() {
+    final elapsedSeconds = (_start.durationMinutes * 60 - _remainingSeconds).clamp(0, _start.durationMinutes * 60);
+    final unanswered = _questions.length - _answers.length;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 32),
+      children: [
+        const Icon(Icons.assignment_turned_in_rounded, size: 44, color: AppColors.blueDark),
+        const SizedBox(height: 14),
+        Text('สรุปก่อนส่งข้อสอบ', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        Text(_start.title, style: const TextStyle(fontSize: 13, color: AppColors.inkFaint, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            Expanded(
+              child: _SummaryStat(
+                icon: Icons.check_circle_outline_rounded,
+                label: 'ทำแล้ว',
+                value: '${_answers.length}/${_questions.length} ข้อ',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _SummaryStat(
+                icon: Icons.timer_outlined,
+                label: 'ใช้เวลาไป',
+                value: _formatDuration(elapsedSeconds),
+              ),
+            ),
+          ],
+        ),
+        if (unanswered > 0) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.gold.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.gold.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, size: 18, color: AppColors.gold),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'ยังเหลือ $unanswered ข้อที่ยังไม่ได้ทำ กด "ส่งข้อสอบ" จะถือว่าข้อนั้นไม่ได้คะแนน',
+                    style: const TextStyle(fontSize: 12.5, color: AppColors.inkSoft, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -409,6 +494,36 @@ class _MockExamScreenState extends State<MockExamScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SummaryStat extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _SummaryStat({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.blueDark),
+          const SizedBox(height: 8),
+          Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.ink)),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(fontSize: 11.5, color: AppColors.inkFaint, fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }
