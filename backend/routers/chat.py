@@ -1,13 +1,13 @@
+import datetime
 import random
 from typing import List
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 import auth
-import models
 import schemas
-from database import get_db
+from database import get_db, next_id
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -22,33 +22,32 @@ MOCK_REPLIES = [
 
 
 @router.get("", response_model=List[schemas.ChatMessageOut])
-def list_messages(
-    db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)
-):
-    return (
-        db.query(models.ChatMessage)
-        .filter(models.ChatMessage.user_id == current_user.id)
-        .order_by(models.ChatMessage.created_at)
-        .all()
-    )
+def list_messages(db: Database = Depends(get_db), current_user: dict = Depends(auth.get_current_user)):
+    return list(db.chat_messages.find({"user_id": current_user["id"]}, batch_size=10000).sort("created_at"))
 
 
 @router.post("", response_model=schemas.ChatSendResponse, status_code=201)
 def send_message(
     payload: schemas.ChatSendRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_user),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(auth.get_current_user),
 ):
-    user_message = models.ChatMessage(user_id=current_user.id, role="user", content=payload.content)
-    db.add(user_message)
-    db.commit()
-    db.refresh(user_message)
+    user_message = {
+        "id": next_id("chat_messages"),
+        "user_id": current_user["id"],
+        "role": "user",
+        "content": payload.content,
+        "created_at": datetime.datetime.utcnow(),
+    }
+    db.chat_messages.insert_one(user_message)
 
-    assistant_message = models.ChatMessage(
-        user_id=current_user.id, role="assistant", content=random.choice(MOCK_REPLIES)
-    )
-    db.add(assistant_message)
-    db.commit()
-    db.refresh(assistant_message)
+    assistant_message = {
+        "id": next_id("chat_messages"),
+        "user_id": current_user["id"],
+        "role": "assistant",
+        "content": random.choice(MOCK_REPLIES),
+        "created_at": datetime.datetime.utcnow(),
+    }
+    db.chat_messages.insert_one(assistant_message)
 
     return schemas.ChatSendResponse(user_message=user_message, assistant_message=assistant_message)

@@ -8,21 +8,38 @@ class GoogleAuthService {
   GoogleAuthService._();
   static final GoogleAuthService instance = GoogleAuthService._();
 
-  static const _clientId = '842886803912-qp05cvv2c4ekpflbha8sl0vp41f89b66.apps.googleusercontent.com';
+  static const _clientId = '777681711265-cv3elhc2hkqe8bji12cg9ijcol1l9kd5.apps.googleusercontent.com';
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    clientId: _clientId,
-    scopes: const ['email', 'profile'],
-  );
+  Future<void>? _initFuture;
 
-  /// Returns the Google ID token to send to the backend, or null if the
-  /// user cancelled the sign-in flow.
-  Future<String?> signIn() async {
-    final account = await _googleSignIn.signIn();
-    if (account == null) return null;
-    final auth = await account.authentication;
-    return auth.idToken;
+  /// `GoogleSignIn.instance` requires this to complete before any other
+  /// call. Idempotent — safe to call from multiple places (both
+  /// [LoginScreen.initState] and the web renderButton widget wait on it).
+  Future<void> ensureInitialized() {
+    return _initFuture ??= GoogleSignIn.instance.initialize(clientId: _clientId);
   }
 
-  Future<void> signOut() => _googleSignIn.signOut();
+  /// Fires on sign-in/sign-out — this is how the web flow reports
+  /// completion, since the real GIS button (rendered by Google's own JS,
+  /// not this app) drives the popup and can't hand back a result via a
+  /// normal awaited call. See [buildGoogleSignInButton].
+  Stream<GoogleSignInAuthenticationEvent> get authenticationEvents => GoogleSignIn.instance.authenticationEvents;
+
+  String? idTokenOf(GoogleSignInAccount account) => account.authentication.idToken;
+
+  /// Native/mobile sign-in: opens the platform's own account picker and
+  /// returns the resulting ID token, or null if the user cancelled. Not
+  /// used on web — see [buildGoogleSignInButton] for why.
+  Future<String?> signIn() async {
+    await ensureInitialized();
+    try {
+      final account = await GoogleSignIn.instance.authenticate();
+      return idTokenOf(account);
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) return null;
+      rethrow;
+    }
+  }
+
+  Future<void> signOut() => GoogleSignIn.instance.signOut();
 }

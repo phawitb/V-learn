@@ -1,13 +1,13 @@
 import datetime
+import os
 
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-import models
 from database import get_db
 
 # Dev-only secret. Rotate and load from env before any real deployment.
@@ -18,7 +18,9 @@ TOKEN_EXPIRE_DAYS = 7
 # Public OAuth client id (safe to embed — this is not the client secret,
 # which is never used by this app since sign-in verifies Google ID tokens
 # directly instead of doing a server-side authorization-code exchange).
-GOOGLE_CLIENT_ID = "842886803912-qp05cvv2c4ekpflbha8sl0vp41f89b66.apps.googleusercontent.com"
+# Must match the client id the Flutter app requests tokens with, or every
+# sign-in fails `aud` verification below.
+GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 
 bearer_scheme = HTTPBearer()
 _google_request = google_requests.Request()
@@ -41,8 +43,8 @@ def create_access_token(user_id: int) -> str:
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-) -> models.User:
+    db: Database = Depends(get_db),
+) -> dict:
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
@@ -54,7 +56,7 @@ def get_current_user(
     except (jwt.PyJWTError, TypeError, ValueError):
         raise unauthorized
 
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.users.find_one({"id": user_id})
     if user is None:
         raise unauthorized
     return user

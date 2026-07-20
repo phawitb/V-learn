@@ -1,38 +1,31 @@
+import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, status
+from pymongo.database import Database
 
 import auth
-import models
 import schemas
-from database import get_db
+from database import get_db, next_id
 
 router = APIRouter(prefix="/mistakes", tags=["mistakes"])
 
 
 @router.get("", response_model=List[schemas.MistakeOut])
-def list_mistakes(
-    db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)
-):
-    rows = (
-        db.query(models.Mistake)
-        .filter(models.Mistake.user_id == current_user.id)
-        .order_by(models.Mistake.created_at.desc())
-        .all()
-    )
-    courses_by_id = {c.id: c for c in db.query(models.Course).all()}
+def list_mistakes(db: Database = Depends(get_db), current_user: dict = Depends(auth.get_current_user)):
+    rows = list(db.mistakes.find({"user_id": current_user["id"]}, batch_size=10000).sort("created_at", -1))
+    courses_by_id = {c["id"]: c for c in db.courses.find(batch_size=10000)}
     # A question's topic_tag is always its owning subject's unit id, so this
     # is how mistakes get grouped by subject in the UI without a new column.
-    units_by_id = {u.id: u for u in db.query(models.MissionUnit).all()}
+    units_by_id = {u["id"]: u for u in db.mission_units.find(batch_size=10000)}
     return [
         schemas.MistakeOut(
-            question_id=m.question_id,
-            topic_tag=m.topic_tag,
-            course_id=m.course_id,
-            course_title=courses_by_id[m.course_id].title if m.course_id in courses_by_id else "",
-            unit_title=units_by_id[m.topic_tag].title if m.topic_tag in units_by_id else m.topic_tag,
-            question_prompt=m.question_prompt,
+            question_id=m["question_id"],
+            topic_tag=m["topic_tag"],
+            course_id=m["course_id"],
+            course_title=courses_by_id[m["course_id"]]["title"] if m["course_id"] in courses_by_id else "",
+            unit_title=units_by_id[m["topic_tag"]]["title"] if m["topic_tag"] in units_by_id else m["topic_tag"],
+            question_prompt=m["question_prompt"],
         )
         for m in rows
     ]
@@ -41,34 +34,31 @@ def list_mistakes(
 @router.post("", response_model=schemas.MistakeOut, status_code=status.HTTP_201_CREATED)
 def create_mistake(
     payload: schemas.MistakeCreateRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_user),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(auth.get_current_user),
 ):
-    existing = (
-        db.query(models.Mistake)
-        .filter(models.Mistake.user_id == current_user.id, models.Mistake.question_id == payload.question_id)
-        .first()
-    )
+    existing = db.mistakes.find_one({"user_id": current_user["id"], "question_id": payload.question_id})
     if existing is None:
-        db.add(
-            models.Mistake(
-                user_id=current_user.id,
-                question_id=payload.question_id,
-                topic_tag=payload.topic_tag,
-                course_id=payload.course_id,
-                question_prompt=payload.question_prompt,
-            )
+        db.mistakes.insert_one(
+            {
+                "id": next_id("mistakes"),
+                "user_id": current_user["id"],
+                "question_id": payload.question_id,
+                "topic_tag": payload.topic_tag,
+                "course_id": payload.course_id,
+                "question_prompt": payload.question_prompt,
+                "created_at": datetime.datetime.utcnow(),
+            }
         )
-        db.commit()
 
-    course = db.query(models.Course).filter(models.Course.id == payload.course_id).first()
-    unit = db.query(models.MissionUnit).filter(models.MissionUnit.id == payload.topic_tag).first()
+    course = db.courses.find_one({"id": payload.course_id})
+    unit = db.mission_units.find_one({"id": payload.topic_tag})
     return schemas.MistakeOut(
         question_id=payload.question_id,
         topic_tag=payload.topic_tag,
         course_id=payload.course_id,
-        course_title=course.title if course else "",
-        unit_title=unit.title if unit else payload.topic_tag,
+        course_title=course["title"] if course else "",
+        unit_title=unit["title"] if unit else payload.topic_tag,
         question_prompt=payload.question_prompt,
     )
 
@@ -76,14 +66,7 @@ def create_mistake(
 @router.delete("/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_mistake(
     question_id: str,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_user),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(auth.get_current_user),
 ):
-    row = (
-        db.query(models.Mistake)
-        .filter(models.Mistake.user_id == current_user.id, models.Mistake.question_id == question_id)
-        .first()
-    )
-    if row is not None:
-        db.delete(row)
-        db.commit()
+    db.mistakes.delete_one({"user_id": current_user["id"], "question_id": question_id})

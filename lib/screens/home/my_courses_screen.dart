@@ -17,6 +17,15 @@ String? _mostRecentUnitId(List<MissionUnit> units) {
   return best?.id;
 }
 
+/// One illustrated banner per exam category, matching the course's own
+/// accent color — falls back to the plain gradient for any course id we
+/// don't have art for.
+String? _headerBannerAsset(String courseId) {
+  const known = {'gpa-phak-a', 'local-exam', 'police-sergeant', 'military-prep'};
+  if (!known.contains(courseId)) return null;
+  return 'assets/images/course_banner_$courseId.jpg';
+}
+
 /// Home tab: the active course's subject list. The active course itself is
 /// loaded once by [RootShell] and shared across all bottom-nav tabs — see
 /// the DEV ONLY note on [AppState.activeCourseId] for how it's picked.
@@ -35,6 +44,7 @@ class MyCoursesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final recentUnitId = _mostRecentUnitId(course.missionUnits);
+    final bannerAsset = _headerBannerAsset(course.id);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -47,39 +57,63 @@ class MyCoursesScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 26),
-                  decoration: const BoxDecoration(
-                    gradient: AppColors.headerGradient,
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(28),
-                      bottomRight: Radius.circular(28),
-                    ),
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(28),
+                    bottomRight: Radius.circular(28),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'คลังข้อสอบ',
-                            style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Stack(
+                      children: [
+                        if (bannerAsset != null)
+                          Positioned.fill(
+                            child: Image.asset(bannerAsset, fit: BoxFit.cover, alignment: Alignment.centerRight),
+                          )
+                        else
+                          const Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(gradient: AppColors.headerGradient))),
+                        if (bannerAsset != null)
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  colors: [Colors.black.withValues(alpha: 0.34), Colors.black.withValues(alpha: 0.0)],
+                                  stops: const [0, 0.68],
+                                ),
+                              ),
+                            ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.settings_outlined, color: Colors.white70, size: 20),
-                            tooltip: 'DEV: เลือกคอร์ส',
-                            onPressed: onShowSwitcher,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'คลังข้อสอบ',
+                                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.settings_outlined, color: Colors.white70, size: 20),
+                                    tooltip: 'DEV: เลือกคอร์ส',
+                                    onPressed: onShowSwitcher,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                course.title,
+                                style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white, fontSize: 26),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 22),
-                      Text(
-                        course.title,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white, fontSize: 26),
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),

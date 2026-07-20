@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/api_client.dart';
@@ -78,29 +79,18 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(color: AppColors.goldSoft, borderRadius: BorderRadius.circular(18)),
-                      child: const Icon(Icons.badge_outlined, color: AppColors.goldInk, size: 30),
-                    ),
-                    const SizedBox(height: 20),
                     const Text('กรอกข้อมูลเพื่อเริ่มใช้งาน', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 19, color: AppColors.ink)),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'ใช้สำหรับติดต่อและออกใบรับรองการเรียน กรอกครั้งเดียวเท่านั้น',
-                      style: TextStyle(color: AppColors.inkSoft, fontSize: 13),
-                    ),
                     const SizedBox(height: 28),
                     TextFormField(
                       controller: _firstName,
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\p{L}\s]', unicode: true))],
                       decoration: const InputDecoration(labelText: 'ชื่อ'),
                       validator: (v) => (v == null || v.trim().isEmpty) ? 'กรอกชื่อ' : null,
                     ),
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _lastName,
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\p{L}\s]', unicode: true))],
                       decoration: const InputDecoration(labelText: 'นามสกุล'),
                       validator: (v) => (v == null || v.trim().isEmpty) ? 'กรอกนามสกุล' : null,
                     ),
@@ -108,6 +98,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
                     TextFormField(
                       controller: _phone,
                       keyboardType: TextInputType.phone,
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+]'))],
                       decoration: const InputDecoration(labelText: 'เบอร์โทรศัพท์'),
                       validator: (v) {
                         final digits = (v ?? '').replaceAll(RegExp(r'\D'), '');

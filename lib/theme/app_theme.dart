@@ -10,10 +10,10 @@ class AppColors {
   static const Color blueMid = Color(0xFF4F8FF0);
   static const Color blueLight = Color(0xFF7FD0EE);
 
-  static const Color background = Color(0xFFF6F3EC);
+  static const Color background = Color(0xFFFAF9F6);
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceSoft = Color(0xFFEFEADF);
-  static const Color border = Color(0xFFE2DDD0);
+  static const Color surfaceSoft = Color(0xFFF3F1EA);
+  static const Color border = Color(0xFFEAE6DC);
 
   static const Color ink = Color(0xFF1C2333);
   static const Color inkSoft = Color(0xFF5B6172);
@@ -49,14 +49,14 @@ class AppTheme {
       ),
     );
 
-    final textTheme = GoogleFonts.kanitTextTheme(base.textTheme).copyWith(
-      titleLarge: GoogleFonts.kanit(
+    final textTheme = GoogleFonts.sarabunTextTheme(base.textTheme).copyWith(
+      titleLarge: GoogleFonts.sarabun(
         fontSize: 22,
         fontWeight: FontWeight.w700,
         color: AppColors.ink,
         letterSpacing: -0.2,
       ),
-      titleMedium: GoogleFonts.kanit(
+      titleMedium: GoogleFonts.sarabun(
         fontSize: 17,
         fontWeight: FontWeight.w600,
         color: AppColors.ink,
@@ -64,7 +64,7 @@ class AppTheme {
       bodyLarge: GoogleFonts.sarabun(fontSize: 15, color: AppColors.ink),
       bodyMedium: GoogleFonts.sarabun(fontSize: 13.5, color: AppColors.inkSoft),
       bodySmall: GoogleFonts.sarabun(fontSize: 12, color: AppColors.inkFaint),
-      labelLarge: GoogleFonts.kanit(fontWeight: FontWeight.w700),
+      labelLarge: GoogleFonts.sarabun(fontWeight: FontWeight.w700),
     );
 
     return base.copyWith(
@@ -81,7 +81,7 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.blueDark,
           foregroundColor: Colors.white,
-          textStyle: GoogleFonts.kanit(fontWeight: FontWeight.w700, fontSize: 15),
+          textStyle: GoogleFonts.sarabun(fontWeight: FontWeight.w700, fontSize: 15),
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 0,
@@ -91,7 +91,7 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.ink,
           side: const BorderSide(color: AppColors.border),
-          textStyle: GoogleFonts.kanit(fontWeight: FontWeight.w600, fontSize: 14),
+          textStyle: GoogleFonts.sarabun(fontWeight: FontWeight.w600, fontSize: 14),
           padding: const EdgeInsets.symmetric(vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),

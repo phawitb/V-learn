@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -27,12 +29,53 @@ class AppState extends ChangeNotifier {
 
   AppUser? currentUser;
   List<Course> courses = [];
+  List<CourseCatalogEntry> catalog = [];
+  Course? activeCourse;
+  List<MockExamSet> activeCourseMockExams = [];
   List<MistakeEntry> mistakes = [];
+  List<MistakeEntry> savedQuestions = [];
+  List<MockExamAttemptSummary> mockExamAttempts = [];
   List<ChatMessage> chatMessages = [];
   bool isInitializing = true;
 
   bool get isAuthenticated => currentUser != null;
   int get eggBalance => currentUser?.eggBalance ?? 0;
+
+  // ---------------- Local cache (stale-while-revalidate) ----------------
+  //
+  // Every screen-open read follows the same shape: apply whatever was
+  // cached from the last successful fetch immediately (so the first paint
+  // never waits on the network), then check the backend in the background
+  // and only touch the cache/UI again if the response actually differs.
+  // Keyed JSON strings in shared_preferences are enough here — no new
+  // storage dependency, and comparing raw response bodies is a cheap stand-in
+  // for a real diff since the API's JSON key order is stable per endpoint.
+  String? _readCache(String key) => _prefs.getString('cache_$key');
+
+  Future<void> _writeCache(String key, String rawJson) => _prefs.setString('cache_$key', rawJson);
+
+  Future<void> _clearCache() async {
+    for (final key in _prefs.getKeys().where((k) => k.startsWith('cache_')).toList()) {
+      await _prefs.remove(key);
+    }
+  }
+
+  Future<void> _cachedFetch(String key, String path, void Function(dynamic json) apply) async {
+    final cachedRaw = _readCache(key);
+    if (cachedRaw != null) {
+      try {
+        apply(jsonDecode(cachedRaw));
+      } catch (_) {
+        // Corrupt/stale-format cache entry — ignore, the network fetch below replaces it.
+      }
+    }
+    final fresh = await _api.get(path);
+    final freshRaw = jsonEncode(fresh);
+    if (freshRaw != cachedRaw) {
+      await _writeCache(key, freshRaw);
+      apply(fresh);
+    }
+  }
 
   Future<void> init() async {
     final token = _prefs.getString(_kToken);
@@ -59,9 +102,17 @@ class AppState extends ChangeNotifier {
     _api.token = null;
     currentUser = null;
     courses = [];
+    catalog = [];
+    activeCourse = null;
+    activeCourseMockExams = [];
     mistakes = [];
+    savedQuestions = [];
+    mockExamAttempts = [];
     chatMessages = [];
     await _prefs.remove(_kToken);
+    // Cached data belongs to whoever was signed in — drop it so a different
+    // user on the same browser never sees a flash of someone else's data.
+    await _clearCache();
   }
 
   Future<void> signInWithGoogle(String idToken) async {
@@ -98,14 +149,18 @@ class AppState extends ChangeNotifier {
     return courses;
   }
 
-  Future<Course> loadCourseDetail(String courseId) async {
-    final res = await _api.get('/courses/$courseId');
-    return Course.fromJson(res as Map<String, dynamic>);
+  Future<void> loadCourseDetail(String courseId) async {
+    await _cachedFetch('course_$courseId', '/courses/$courseId', (json) {
+      activeCourse = Course.fromJson(json as Map<String, dynamic>);
+      notifyListeners();
+    });
   }
 
-  Future<List<CourseCatalogEntry>> loadCatalog() async {
-    final res = await _api.get('/courses/catalog') as List;
-    return res.map((c) => CourseCatalogEntry.fromJson(c as Map<String, dynamic>)).toList();
+  Future<void> loadCatalog() async {
+    await _cachedFetch('catalog', '/courses/catalog', (json) {
+      catalog = (json as List).map((c) => CourseCatalogEntry.fromJson(c as Map<String, dynamic>)).toList();
+      notifyListeners();
+    });
   }
 
   Future<void> enrollInCourse(String courseId) async {
@@ -180,12 +235,25 @@ class AppState extends ChangeNotifier {
     return res.map((q) => Question.fromJson(q as Map<String, dynamic>)).toList();
   }
 
+  Future<List<Question>> fetchQuestionsByIds(List<String> ids) async {
+    final res = await _api.get('/questions/by-ids?ids=${ids.join(',')}') as List;
+    return res.map((q) => Question.fromJson(q as Map<String, dynamic>)).toList();
+  }
+
   // ---------------- Mistake Hunter ----------------
 
   Future<void> loadMistakes() async {
-    final res = await _api.get('/mistakes') as List;
-    mistakes = res.map((m) => MistakeEntry.fromJson(m as Map<String, dynamic>)).toList();
-    notifyListeners();
+    await _cachedFetch('mistakes', '/mistakes', (json) {
+      mistakes = (json as List).map((m) => MistakeEntry.fromJson(m as Map<String, dynamic>)).toList();
+      notifyListeners();
+    });
+  }
+
+  Future<void> loadSavedQuestions() async {
+    await _cachedFetch('saved_questions', '/questions/saved', (json) {
+      savedQuestions = (json as List).map((m) => MistakeEntry.fromJson(m as Map<String, dynamic>)).toList();
+      notifyListeners();
+    });
   }
 
   Future<void> logMistake(MistakeEntry entry) async {
@@ -232,9 +300,11 @@ class AppState extends ChangeNotifier {
 
   // ---------------- Mock exam ----------------
 
-  Future<List<MockExamSet>> loadMockExams(String courseId) async {
-    final res = await _api.get('/courses/$courseId/mock-exams') as List;
-    return res.map((e) => MockExamSet.fromJson(e as Map<String, dynamic>)).toList();
+  Future<void> loadMockExams(String courseId) async {
+    await _cachedFetch('mock_exams_$courseId', '/courses/$courseId/mock-exams', (json) {
+      activeCourseMockExams = (json as List).map((e) => MockExamSet.fromJson(e as Map<String, dynamic>)).toList();
+      notifyListeners();
+    });
   }
 
   Future<MockExamStatus> mockExamStatus(String examSetId) async {
@@ -263,10 +333,12 @@ class AppState extends ChangeNotifier {
     return MockExamResult.fromJson(res);
   }
 
-  Future<List<MockExamAttemptSummary>> loadMockExamAttempts({String? courseId}) async {
+  Future<void> loadMockExamAttempts({String? courseId}) async {
     final query = courseId == null ? '' : '?course_id=$courseId';
-    final res = await _api.get('/mock-exams/attempts$query') as List;
-    return res.map((e) => MockExamAttemptSummary.fromJson(e as Map<String, dynamic>)).toList();
+    await _cachedFetch('mock_exam_attempts_${courseId ?? 'all'}', '/mock-exams/attempts$query', (json) {
+      mockExamAttempts = (json as List).map((e) => MockExamAttemptSummary.fromJson(e as Map<String, dynamic>)).toList();
+      notifyListeners();
+    });
   }
 
   Future<MockExamResult> loadMockExamAttemptResult(int attemptId) async {

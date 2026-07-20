@@ -1,16 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-import models
 import seed
-from database import Base, SessionLocal, engine
+from database import ensure_indexes, get_db
 from routers import auth, chat, courses, daily_egg, episodes, mistakes, mock_exam, questions
 
-Base.metadata.create_all(bind=engine)
-
-with SessionLocal() as db:
-    seed.seed_if_empty(db)
-    seed.seed_mock_exams(db)
+_db = get_db()
+ensure_indexes()
+seed.seed_if_empty(_db)
+seed.seed_mock_exams(_db)
 
 app = FastAPI(title="V-Learn API")
 

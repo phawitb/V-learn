@@ -39,6 +39,7 @@ class SubCourseTile extends StatelessWidget {
           border: Border.all(color: isRecent ? AppColors.red : AppColors.border, width: isRecent ? 1.6 : 1),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               width: 34,

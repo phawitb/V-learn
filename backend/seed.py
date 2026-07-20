@@ -2,9 +2,9 @@ import json
 import random
 from pathlib import Path
 
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-import models
+from database import next_id
 
 CONTENT_FILE = Path(__file__).resolve().parent / "data" / "afaps_content.json"
 
@@ -19,8 +19,8 @@ THUMB_COLORS = {
 DEFAULT_THUMB_COLORS = ("#3F6BEA", "#7FD0EE")
 
 
-def seed_if_empty(db: Session) -> None:
-    if db.query(models.Course).count() > 0:
+def seed_if_empty(db: Database) -> None:
+    if db.courses.count_documents({}) > 0:
         return
 
     with CONTENT_FILE.open(encoding="utf-8") as f:
@@ -28,57 +28,58 @@ def seed_if_empty(db: Session) -> None:
 
     for order_index, course_data in enumerate(content["courses"]):
         thumb_start, thumb_end = THUMB_COLORS.get(course_data["id"], DEFAULT_THUMB_COLORS)
-        course = models.Course(
-            id=course_data["id"],
-            code=course_data["code"],
-            title=course_data["title"],
-            instructor=course_data["source_label"],
-            thumb_color_start=thumb_start,
-            thumb_color_end=thumb_end,
-            total_hours=max(1, round(course_data["total_questions"] / 20)),
-            has_eggspace=bool(course_data["mission_units"]),
-            order_index=order_index,
+        db.courses.insert_one(
+            {
+                "id": course_data["id"],
+                "code": course_data["code"],
+                "title": course_data["title"],
+                "instructor": course_data["source_label"],
+                "thumb_color_start": thumb_start,
+                "thumb_color_end": thumb_end,
+                "total_hours": max(1, round(course_data["total_questions"] / 20)),
+                "has_eggspace": bool(course_data["mission_units"]),
+                "order_index": order_index,
+            }
         )
-        db.add(course)
 
         for unit_order, unit_data in enumerate(course_data["mission_units"]):
-            unit = models.MissionUnit(
-                id=unit_data["id"],
-                course_id=course.id,
-                title=unit_data["title"],
-                order_index=unit_order,
+            db.mission_units.insert_one(
+                {
+                    "id": unit_data["id"],
+                    "course_id": course_data["id"],
+                    "title": unit_data["title"],
+                    "order_index": unit_order,
+                }
             )
-            db.add(unit)
 
             for node_order, node_data in enumerate(unit_data["nodes"]):
-                node = models.MissionNode(
-                    id=node_data["id"],
-                    unit_id=unit.id,
-                    title=node_data["title"],
-                    type=node_data["type"],
-                    lesson_count=node_data["lesson_count"],
-                    exercise_count=node_data["exercise_count"],
-                    youtube_id=None,
-                    egg_reward=node_data["egg_reward"],
-                    order_index=node_order,
+                db.mission_nodes.insert_one(
+                    {
+                        "id": node_data["id"],
+                        "unit_id": unit_data["id"],
+                        "title": node_data["title"],
+                        "type": node_data["type"],
+                        "lesson_count": node_data["lesson_count"],
+                        "exercise_count": node_data["exercise_count"],
+                        "youtube_id": None,
+                        "egg_reward": node_data["egg_reward"],
+                        "order_index": node_order,
+                    }
                 )
-                db.add(node)
 
                 for q_order, q_data in enumerate(node_data["questions"]):
-                    db.add(
-                        models.Question(
-                            id=q_data["id"],
-                            node_id=node.id,
-                            topic_tag=q_data["topic_tag"],
-                            prompt=q_data["prompt"],
-                            choices=q_data["choices"],
-                            correct_index=q_data["correct_index"],
-                            step_solution=q_data["step_solution"],
-                            order_index=q_order,
-                        )
+                    db.questions.insert_one(
+                        {
+                            "id": q_data["id"],
+                            "node_id": node_data["id"],
+                            "topic_tag": q_data["topic_tag"],
+                            "prompt": q_data["prompt"],
+                            "choices": q_data["choices"],
+                            "correct_index": q_data["correct_index"],
+                            "step_solution": q_data["step_solution"],
+                            "order_index": q_order,
+                        }
                     )
-
-    db.commit()
 
 
 # Real-exam-informed mock exam blueprints: subject -> {count, points}.
@@ -116,45 +117,47 @@ EXAM_BLUEPRINTS = {
 MOCK_EXAM_SETS_PER_COURSE = 2
 
 
-def seed_mock_exams(db: Session) -> None:
-    if db.query(models.MockExamSet).count() > 0:
+def seed_mock_exams(db: Database) -> None:
+    if db.mock_exam_sets.count_documents({}) > 0:
         return
 
     for course_id, blueprint in EXAM_BLUEPRINTS.items():
-        course = db.query(models.Course).filter(models.Course.id == course_id).first()
+        course = db.courses.find_one({"id": course_id})
         if course is None:
             continue
-        units_by_title = {u.title: u for u in course.mission_units}
+        units_by_title = {u["title"]: u for u in db.mission_units.find({"course_id": course_id})}
 
         for set_no in range(1, MOCK_EXAM_SETS_PER_COURSE + 1):
-            exam_set = models.MockExamSet(
-                id=f"{course_id}-mock-{set_no}",
-                course_id=course_id,
-                title=f"ชุดที่ {set_no}",
-                order_index=set_no,
-                duration_minutes=blueprint["duration_minutes"],
+            exam_set_id = f"{course_id}-mock-{set_no}"
+            db.mock_exam_sets.insert_one(
+                {
+                    "id": exam_set_id,
+                    "course_id": course_id,
+                    "title": f"ชุดที่ {set_no}",
+                    "order_index": set_no,
+                    "duration_minutes": blueprint["duration_minutes"],
+                }
             )
-            db.add(exam_set)
 
             order_index = 0
             for subject_title, spec in blueprint["subjects"].items():
                 unit = units_by_title.get(subject_title)
                 if unit is None:
                     continue
-                question_ids = [q.id for node in unit.nodes for q in node.questions]
+                node_ids = [n["id"] for n in db.mission_nodes.find({"unit_id": unit["id"]}, {"id": 1})]
+                question_ids = [q["id"] for q in db.questions.find({"node_id": {"$in": node_ids}}, {"id": 1})]
                 if not question_ids:
                     continue
                 chosen = random.sample(question_ids, min(spec["count"], len(question_ids)))
                 for qid in chosen:
-                    db.add(
-                        models.MockExamQuestion(
-                            exam_set_id=exam_set.id,
-                            question_id=qid,
-                            subject_title=subject_title,
-                            points=spec["points"],
-                            order_index=order_index,
-                        )
+                    db.mock_exam_questions.insert_one(
+                        {
+                            "id": next_id("mock_exam_questions"),
+                            "exam_set_id": exam_set_id,
+                            "question_id": qid,
+                            "subject_title": subject_title,
+                            "points": spec["points"],
+                            "order_index": order_index,
+                        }
                     )
                     order_index += 1
-
-    db.commit()

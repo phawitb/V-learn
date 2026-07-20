@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/course.dart';
-import '../../models/course_catalog_entry.dart';
 import '../../services/api_client.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
@@ -23,38 +21,64 @@ class RootShell extends StatefulWidget {
 }
 
 class _RootShellState extends State<RootShell> {
-  late Future<Course> _future;
-  List<CourseCatalogEntry> _catalog = [];
+  String? _error;
   int _tabIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _future = _loadActiveCourse();
+    _bootstrap();
   }
 
-  Future<Course> _loadActiveCourse() async {
+  // Cache-first: AppState.loadCourseDetail/loadCatalog/loadMockExams each
+  // apply a cached response immediately (if one exists from a previous
+  // visit) before this even finishes awaiting the network, so build() below
+  // can paint the last-known state on the very first frame instead of
+  // waiting on this whole chain. The network calls that follow only touch
+  // the UI again if the backend's answer actually changed.
+  Future<void> _bootstrap() async {
     final appState = context.read<AppState>();
-    _catalog = await appState.loadCatalog();
+    final knownTargetId = appState.activeCourseId;
+    try {
+      final loads = <Future>[appState.loadCatalog()];
+      if (knownTargetId != null) {
+        loads.addAll([appState.loadCourseDetail(knownTargetId), appState.loadMockExams(knownTargetId)]);
+      }
+      await Future.wait(loads);
 
-    var targetId = appState.activeCourseId;
-    if (targetId == null || !_catalog.any((c) => c.id == targetId)) {
-      targetId = _catalog.firstWhere((c) => c.hasEggspace, orElse: () => _catalog.first).id;
-    }
+      final catalog = appState.catalog;
+      var targetId = knownTargetId;
+      if (targetId == null || !catalog.any((c) => c.id == targetId)) {
+        targetId = catalog.firstWhere((c) => c.hasEggspace, orElse: () => catalog.first).id;
+      }
 
-    await appState.enrollInCourse(targetId);
-    final course = await appState.loadCourseDetail(targetId);
-    if (appState.activeCourseId != targetId) {
-      await appState.setActiveCourseId(targetId);
+      // The catalog we just loaded already says whether this course is
+      // enrolled — skip the extra round trip to /enroll (whose response is
+      // thrown away anyway) unless it's genuinely a first-time enrollment.
+      final alreadyEnrolled = catalog.any((c) => c.id == targetId && c.enrolled);
+      if (!alreadyEnrolled) {
+        await appState.enrollInCourse(targetId);
+      }
+      if (targetId != knownTargetId) {
+        await Future.wait([appState.loadCourseDetail(targetId), appState.loadMockExams(targetId)]);
+      }
+      if (appState.activeCourseId != targetId) {
+        await appState.setActiveCourseId(targetId);
+      }
+      if (mounted) setState(() => _error = null);
+    } catch (e) {
+      // If we already have something on screen (from cache or an earlier
+      // successful load), keep showing it rather than replacing it with an
+      // error — only a truly empty first load surfaces the error state.
+      if (mounted) {
+        setState(() {
+          _error = e is ApiException ? e.message : 'เชื่อมต่อ backend ไม่ได้ ตรวจสอบว่ารัน uvicorn อยู่ที่ :8000';
+        });
+      }
     }
-    return course;
   }
 
-  Future<void> _reload() async {
-    final next = _loadActiveCourse();
-    setState(() => _future = next);
-    await next;
-  }
+  Future<void> _reload() => _bootstrap();
 
   // DEV ONLY: lets whoever is testing this shared codebase switch which of
   // the 4 main courses this "app" represents, without rebuilding. Remove
@@ -79,7 +103,7 @@ class _RootShellState extends State<RootShell> {
               ),
             ),
             const Divider(height: 1),
-            for (final entry in _catalog)
+            for (final entry in appState.catalog)
               ListTile(
                 title: Text(entry.title),
                 subtitle: Text(
@@ -104,58 +128,124 @@ class _RootShellState extends State<RootShell> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Course>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-        if (snapshot.hasError) {
-          return Scaffold(
-            body: _ErrorState(
-              message: snapshot.error is ApiException
-                  ? (snapshot.error as ApiException).message
-                  : 'เชื่อมต่อ backend ไม่ได้ ตรวจสอบว่ารัน uvicorn อยู่ที่ :8000',
-              onRetry: _reload,
-            ),
-          );
-        }
+    final appState = context.watch<AppState>();
+    final course = appState.activeCourse;
 
-        final course = snapshot.data!;
-        final tabs = [
-          MyCoursesScreen(
-            course: course,
-            onShowSwitcher: () => _showCourseSwitcher(context),
-            onReload: _reload,
-          ),
-          const MistakeHunterScreen(),
-          const AiChatScreen(),
-          const ProfileScreen(),
-        ];
+    if (course == null) {
+      if (_error != null) {
+        return Scaffold(body: _ErrorState(message: _error!, onRetry: _reload));
+      }
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
-        return Scaffold(
-          body: IndexedStack(index: _tabIndex, children: tabs),
-          bottomNavigationBar: NavigationBar(
-            height: 62,
-            selectedIndex: _tabIndex,
-            onDestinationSelected: (i) => setState(() => _tabIndex = i),
-            destinations: const [
-              NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'หน้าหลัก'),
-              NavigationDestination(
-                icon: Icon(Icons.track_changes_outlined),
-                selectedIcon: Icon(Icons.track_changes_rounded),
-                label: 'ทบทวน',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.chat_bubble_outline_rounded),
-                selectedIcon: Icon(Icons.chat_bubble_rounded),
-                label: 'แชท',
-              ),
-              NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'โปรไฟล์'),
+    final tabs = [
+      MyCoursesScreen(
+        course: course,
+        onShowSwitcher: () => _showCourseSwitcher(context),
+        onReload: _reload,
+      ),
+      const MistakeHunterScreen(),
+      const AiChatScreen(),
+      const ProfileScreen(),
+    ];
+
+    return Scaffold(
+      body: IndexedStack(index: _tabIndex, children: tabs),
+      bottomNavigationBar: _BottomNavBar(
+        selectedIndex: _tabIndex,
+        onSelect: (i) => setState(() => _tabIndex = i),
+        items: const [
+          _NavItem(icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'หน้าหลัก'),
+          _NavItem(icon: Icons.track_changes_outlined, selectedIcon: Icons.track_changes_rounded, label: 'ทบทวน'),
+          _NavItem(icon: Icons.chat_bubble_outline_rounded, selectedIcon: Icons.chat_bubble_rounded, label: 'แชท'),
+          _NavItem(icon: Icons.person_outline_rounded, selectedIcon: Icons.person_rounded, label: 'โปรไฟล์'),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavItem {
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+
+  const _NavItem({required this.icon, required this.selectedIcon, required this.label});
+}
+
+/// Same look as Material's NavigationBar (indicator pill, colors pulled
+/// from the theme) but with a tighter icon-label gap — NavigationBar's
+/// spacing there isn't exposed via any public theme property.
+class _BottomNavBar extends StatelessWidget {
+  final int selectedIndex;
+  final List<_NavItem> items;
+  final ValueChanged<int> onSelect;
+
+  const _BottomNavBar({required this.selectedIndex, required this.items, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surface,
+      elevation: 3,
+      child: SafeArea(
+        child: SizedBox(
+          height: 62,
+          child: Row(
+            children: [
+              for (var i = 0; i < items.length; i++)
+                Expanded(
+                  child: _NavButton(
+                    item: items[i],
+                    selected: i == selectedIndex,
+                    scheme: scheme,
+                    onTap: () => onSelect(i),
+                  ),
+                ),
             ],
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+}
+
+class _NavButton extends StatelessWidget {
+  final _NavItem item;
+  final bool selected;
+  final ColorScheme scheme;
+  final VoidCallback onTap;
+
+  const _NavButton({required this.item, required this.selected, required this.scheme, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final iconColor = selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant;
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: selected ? scheme.secondaryContainer : Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(selected ? item.selectedIcon : item.icon, color: iconColor, size: 23),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            item.label,
+            style: TextStyle(
+              color: selected ? scheme.onSurface : scheme.onSurfaceVariant,
+              fontSize: 11.5,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

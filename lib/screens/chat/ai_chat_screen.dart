@@ -66,7 +66,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('CLEAR'),
+        title: const Text('แชท', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(28),
           child: Padding(

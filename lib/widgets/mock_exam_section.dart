@@ -23,76 +23,56 @@ String? _mostRecentInProgressId(List<MockExamSet> sets) {
 /// Home-screen entry point for the 2 pre-generated practice exams per
 /// course. Hidden entirely if the course has none (e.g. no verified
 /// content yet for that exam category).
-class MockExamSection extends StatefulWidget {
+///
+/// Reads AppState.activeCourseMockExams reactively instead of fetching its
+/// own copy — RootShell already loads it (cache-first, in parallel with the
+/// course detail) so this just rebuilds whenever that field changes, with
+/// no separate loading state of its own.
+class MockExamSection extends StatelessWidget {
   final String courseId;
 
   const MockExamSection({super.key, required this.courseId});
-
-  @override
-  State<MockExamSection> createState() => _MockExamSectionState();
-}
-
-class _MockExamSectionState extends State<MockExamSection> {
-  late Future<List<MockExamSet>> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = context.read<AppState>().loadMockExams(widget.courseId);
-  }
 
   Future<void> _open(BuildContext context, MockExamSet set) async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => MockExamIntroScreen(examSet: set)),
     );
-    if (!mounted) return;
-    setState(() => _future = context.read<AppState>().loadMockExams(widget.courseId));
+    if (context.mounted) {
+      context.read<AppState>().loadMockExams(courseId);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<MockExamSet>>(
-      future: _future,
-      builder: (context, snapshot) {
-        final sets = snapshot.data ?? [];
-        if (snapshot.connectionState == ConnectionState.done && sets.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        final recentId = _mostRecentInProgressId(sets);
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('ข้อสอบเสมือนจริง', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 10),
-              if (snapshot.connectionState != ConnectionState.done)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: LinearProgressIndicator(),
-                )
-              else
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < sets.length; i++) ...[
-                        if (i > 0) const SizedBox(width: 10),
-                        Expanded(
-                          child: _ExamSetCard(
-                            set: sets[i],
-                            isRecent: sets[i].id == recentId,
-                            onTap: () => _open(context, sets[i]),
-                          ),
-                        ),
-                      ],
-                    ],
+    final sets = context.watch<AppState>().activeCourseMockExams;
+    if (sets.isEmpty) return const SizedBox.shrink();
+    final recentId = _mostRecentInProgressId(sets);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('ข้อสอบเสมือนจริง', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 10),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < sets.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Expanded(
+                    child: _ExamSetCard(
+                      set: sets[i],
+                      isRecent: sets[i].id == recentId,
+                      onTap: () => _open(context, sets[i]),
+                    ),
                   ),
-                ),
-            ],
+                ],
+              ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }
