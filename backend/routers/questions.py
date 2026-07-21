@@ -12,31 +12,6 @@ from database import get_db, next_id
 router = APIRouter(prefix="/questions", tags=["questions"])
 
 
-@router.get("/by-topic", response_model=List[schemas.QuestionOut])
-def questions_by_topic(
-    topic_tag: str = Query(...),
-    exclude: str | None = Query(default=None),
-    db: Database = Depends(get_db),
-    current_user: dict = Depends(auth.get_current_user),
-):
-    # Some subjects run to 100+ questions (e.g. ความรู้ความสามารถทั่วไป has
-    # 172) — looping a 3-query-per-question lookup over that, as this used
-    # to, is the same N+1-against-Atlas mistake fixed elsewhere in this
-    # file, just triggered here by opening a single mistake/daily-egg
-    # variant lookup instead of a big listing screen.
-    query: dict = {"topic_tag": topic_tag}
-    if exclude:
-        query["id"] = {"$ne": exclude}
-    rows = list(db.questions.find(query, batch_size=10000))
-    if not rows:
-        rows = list(db.questions.find({"topic_tag": topic_tag}, batch_size=10000))
-    answers, saved_ids, reported_ids = serializers.progress_maps(db, current_user["id"], [r["id"] for r in rows])
-    return [
-        serializers.build_question_out(r, answers.get(r["id"]), r["id"] in saved_ids, r["id"] in reported_ids)
-        for r in rows
-    ]
-
-
 @router.get("/by-ids", response_model=List[schemas.QuestionOut])
 def questions_by_ids(
     ids: str = Query(..., description="Comma-separated question ids"),

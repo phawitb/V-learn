@@ -230,14 +230,6 @@ class AppState extends ChangeNotifier {
     await _api.post('/questions/$questionId/report', body: {'message': message});
   }
 
-  Future<List<Question>> fetchVariantQuestions(String topicTag, {String? excludeQuestionId}) async {
-    final query = excludeQuestionId == null
-        ? '/questions/by-topic?topic_tag=$topicTag'
-        : '/questions/by-topic?topic_tag=$topicTag&exclude=$excludeQuestionId';
-    final res = await _api.get(query) as List;
-    return res.map((q) => Question.fromJson(q as Map<String, dynamic>)).toList();
-  }
-
   Future<List<Question>> fetchQuestionsByIds(List<String> ids) async {
     final res = await _api.get('/questions/by-ids?ids=${ids.join(',')}') as List;
     return res.map((q) => Question.fromJson(q as Map<String, dynamic>)).toList();
