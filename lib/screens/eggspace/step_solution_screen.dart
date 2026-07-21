@@ -64,6 +64,13 @@ class StepSolutionScreen extends StatefulWidget {
   /// circles appear (used by the mock exam result review).
   final bool showWrongOnlyFilter;
 
+  /// Question id -> correct-retry count so far (mistake review only) — shown
+  /// as a badge next to the question number, before the timer. A snapshot
+  /// as of when the screen loaded, not live-updated mid-session; the
+  /// snackbar shown right after each correct answer covers the immediate
+  /// feedback, and the badge catches up on the next screen load.
+  final Map<String, int>? correctCounts;
+
   const StepSolutionScreen({
     super.key,
     required this.courseId,
@@ -76,6 +83,7 @@ class StepSolutionScreen extends StatefulWidget {
     this.onAnswered,
     this.allowReset = true,
     this.showWrongOnlyFilter = false,
+    this.correctCounts,
   });
 
   @override
@@ -478,6 +486,10 @@ class _StepSolutionScreenState extends State<StepSolutionScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('ข้อ ${_index + 1}/${_questions.length}'),
+            if (widget.correctCounts?[q.id] != null) ...[
+              const SizedBox(width: 8),
+              _CorrectCountBadge(count: widget.correctCounts![q.id]!),
+            ],
             const SizedBox(width: 8),
             _TimerBadge(time: _formattedTime),
           ],
@@ -669,6 +681,34 @@ class _TimerBadge extends StatelessWidget {
           const Icon(Icons.timer_outlined, size: 13, color: AppColors.inkSoft),
           const SizedBox(width: 4),
           Text(time, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppColors.inkSoft)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shows how many times this mistake's variant has been answered correctly
+/// so far — clears from ทบทวน once it hits 3 (see AppState.recordMistakeRetry).
+class _CorrectCountBadge extends StatelessWidget {
+  final int count;
+
+  const _CorrectCountBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.green.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.green),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle_outline, size: 13, color: AppColors.green),
+          const SizedBox(width: 4),
+          Text('$count/3', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppColors.green)),
         ],
       ),
     );

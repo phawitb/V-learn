@@ -42,7 +42,13 @@ class _RootShellState extends State<RootShell> {
     try {
       final loads = <Future>[appState.loadCatalog()];
       if (knownTargetId != null) {
-        loads.addAll([appState.loadCourseDetail(knownTargetId), appState.loadMockExams(knownTargetId)]);
+        // Speculative: knownTargetId might be a course switched to (via the
+        // DEV switcher) that isn't enrolled yet, in which case /courses/{id}
+        // 404s since it requires enrollment — swallow that here rather than
+        // letting it abort the whole bootstrap, since the enrollment check
+        // below will retry the fetch once actually enrolled.
+        loads.add(appState.loadCourseDetail(knownTargetId).catchError((_) {}));
+        loads.add(appState.loadMockExams(knownTargetId).catchError((_) {}));
       }
       await Future.wait(loads);
 
@@ -59,7 +65,10 @@ class _RootShellState extends State<RootShell> {
       if (!alreadyEnrolled) {
         await appState.enrollInCourse(targetId);
       }
-      if (targetId != knownTargetId) {
+      // Always confirm the target course's detail actually loaded — covers
+      // both a freshly-picked targetId and the case where the speculative
+      // fetch above 404'd because enrollment hadn't happened yet.
+      if (targetId != knownTargetId || !alreadyEnrolled) {
         await Future.wait([appState.loadCourseDetail(targetId), appState.loadMockExams(targetId)]);
       }
       if (appState.activeCourseId != targetId) {

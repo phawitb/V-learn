@@ -88,11 +88,17 @@ class _MistakeReviewScreenState extends State<MistakeReviewScreen> {
             ),
           );
         }
+        final mistakesById = {for (final m in widget.mistakes) m.questionId: m};
+        final correctCounts = {
+          for (final entry in loaded.originalIdByVariantId.entries)
+            entry.key: mistakesById[entry.value]?.correctCount ?? 0,
+        };
         return StepSolutionScreen(
           courseId: widget.mistakes.first.courseId,
           questions: loaded.questions,
           reviewTitle: widget.subjectTitle,
           trackProgress: false,
+          correctCounts: correctCounts,
           onAnswered: (question, correct) async {
             if (!correct) return;
             final originalId = loaded.originalIdByVariantId[question.id];
