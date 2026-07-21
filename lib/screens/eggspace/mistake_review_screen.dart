@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,12 +10,15 @@ import '../../theme/app_theme.dart';
 import 'step_solution_screen.dart';
 
 /// Reviews one subject's outstanding mistakes with a same-topic variant
-/// question per mistake — displayed through the exact same
+/// question per mistake, freshly randomized every time this screen opens
+/// (so it never quietly reuses the exact same variant a learner already
+/// answered last visit) — displayed through the exact same
 /// [StepSolutionScreen] used by normal practice mode, so สารบัญ, the
 /// bottom bar, and choice-tile styling all look and behave identically.
-/// A cleared mistake drops out of [AppState.mistakes] immediately, so
-/// simply re-entering this screen later naturally resumes at whatever's
-/// left to review — no separate "last position" bookkeeping needed.
+/// A mistake only drops out of [AppState.mistakes] once its variant has
+/// been answered correctly 3 times (see [AppState.recordMistakeRetry]) —
+/// re-entering this screen naturally resumes at whatever's still left,
+/// no separate "last position" bookkeeping needed.
 class MistakeReviewScreen extends StatefulWidget {
   final String subjectTitle;
   final List<MistakeEntry> mistakes;
@@ -37,12 +42,11 @@ class _MistakeReviewScreenState extends State<MistakeReviewScreen> {
     final appState = context.read<AppState>();
     // topic_tag is subject-wide (every mistake in this subject shares the
     // same value), so fetching it separately per mistake — as this used to —
-    // returned the same overlapping pool every time. Since Mongo has no
-    // explicit sort here, the "first" row was deterministically identical
-    // across calls, so every mistake silently landed on the same variant
-    // question unless it happened to be the one excluded. Fetch the pool
-    // once and hand out a distinct question per mistake instead.
-    final pool = await appState.fetchVariantQuestions(widget.mistakes.first.topicTag);
+    // returned the same overlapping pool every time. Fetch the pool once,
+    // shuffle it, and hand out a distinct question per mistake instead —
+    // shuffling (not just de-duplicating) is what makes each visit show a
+    // genuinely different variant instead of the same deterministic pick.
+    final pool = List<Question>.of(await appState.fetchVariantQuestions(widget.mistakes.first.topicTag))..shuffle(Random());
 
     final assigned = <String>{};
     final questions = <Question>[];
@@ -89,12 +93,20 @@ class _MistakeReviewScreenState extends State<MistakeReviewScreen> {
           questions: loaded.questions,
           reviewTitle: widget.subjectTitle,
           trackProgress: false,
-          onAnswered: (question, correct) {
+          onAnswered: (question, correct) async {
             if (!correct) return;
             final originalId = loaded.originalIdByVariantId[question.id];
-            if (originalId != null) {
-              context.read<AppState>().clearMistake(originalId);
-            }
+            if (originalId == null) return;
+            final (correctCount, cleared) = await context.read<AppState>().recordMistakeRetry(originalId, true);
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  cleared ? 'เยี่ยม! ทำถูกครบ $correctCount ครั้งแล้ว ผ่านข้อนี้ 🎉' : 'ถูกต้อง! ทำถูกแล้ว $correctCount/3 ครั้ง',
+                ),
+                backgroundColor: cleared ? AppColors.green : null,
+              ),
+            );
           },
         );
       },

@@ -293,6 +293,7 @@ def submit_exam(
                     "topic_tag": q["topic_tag"],
                     "course_id": unit["course_id"] if unit else exam_set["course_id"],
                     "question_prompt": q["prompt"],
+                    "correct_count": 0,
                     "created_at": now,
                 }
             )

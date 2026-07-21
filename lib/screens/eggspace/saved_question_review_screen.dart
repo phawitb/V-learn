@@ -12,6 +12,11 @@ import 'step_solution_screen.dart';
 /// same [StepSolutionScreen] used everywhere else. Un-bookmarking a
 /// question there is what drops it out of this list on the next visit —
 /// there's no separate "done reviewing" action.
+///
+/// trackProgress is on (unlike mistake review's variants) because these are
+/// the same stable, real questions every time — recording the answer here
+/// is what makes a previously-picked choice still show highlighted next
+/// time this screen opens, instead of always looking freshly unanswered.
 class SavedQuestionReviewScreen extends StatefulWidget {
   final String subjectTitle;
   final List<MistakeEntry> saved;
@@ -55,7 +60,6 @@ class _SavedQuestionReviewScreenState extends State<SavedQuestionReviewScreen> {
           courseId: widget.saved.first.courseId,
           questions: questions,
           reviewTitle: widget.subjectTitle,
-          trackProgress: false,
         );
       },
     );

@@ -280,6 +280,16 @@ class MistakeOut(BaseModel):
     course_title: str
     unit_title: str
     question_prompt: str
+    correct_count: int = 0
+
+
+class MistakeRetryRequest(BaseModel):
+    correct: bool
+
+
+class MistakeRetryOut(BaseModel):
+    correct_count: int
+    cleared: bool
 
 
 # ---------- CLEAR AI chat ----------

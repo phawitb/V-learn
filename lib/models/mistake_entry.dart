@@ -9,6 +9,7 @@ class MistakeEntry {
   final String courseTitle;
   final String unitTitle;
   final String questionPrompt;
+  final int correctCount;
 
   const MistakeEntry({
     required this.questionId,
@@ -17,7 +18,18 @@ class MistakeEntry {
     required this.courseTitle,
     this.unitTitle = '',
     required this.questionPrompt,
+    this.correctCount = 0,
   });
+
+  MistakeEntry copyWith({int? correctCount}) => MistakeEntry(
+        questionId: questionId,
+        topicTag: topicTag,
+        courseId: courseId,
+        courseTitle: courseTitle,
+        unitTitle: unitTitle,
+        questionPrompt: questionPrompt,
+        correctCount: correctCount ?? this.correctCount,
+      );
 
   Map<String, dynamic> toCreateJson() => {
         'question_id': questionId,
@@ -33,5 +45,6 @@ class MistakeEntry {
         courseTitle: json['course_title'] as String,
         unitTitle: json['unit_title'] as String? ?? '',
         questionPrompt: json['question_prompt'] as String,
+        correctCount: json['correct_count'] as int? ?? 0,
       );
 }

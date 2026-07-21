@@ -280,6 +280,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Reports a retry of a mistake's (randomized) variant question — the
+  /// mistake only clears once the backend's correct-count threshold is hit,
+  /// so a single lucky guess doesn't drop it from ทบทวน. Returns the updated
+  /// count and whether it just cleared, so the caller can surface it.
+  Future<(int correctCount, bool cleared)> recordMistakeRetry(String questionId, bool correct) async {
+    final res = await _api.post('/mistakes/$questionId/retry', body: {'correct': correct}) as Map<String, dynamic>;
+    final correctCount = res['correct_count'] as int;
+    final cleared = res['cleared'] as bool;
+    if (cleared) {
+      mistakes.removeWhere((m) => m.questionId == questionId);
+    } else {
+      final i = mistakes.indexWhere((m) => m.questionId == questionId);
+      if (i != -1) mistakes[i] = mistakes[i].copyWith(correctCount: correctCount);
+    }
+    notifyListeners();
+    return (correctCount, cleared);
+  }
+
   // ---------------- Daily egg ----------------
 
   Future<DailyEggStatus> loadDailyEggStatus(String courseId) async {
