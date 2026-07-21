@@ -12,7 +12,10 @@ import 'saved_question_review_screen.dart';
 
 /// ทบทวน: everything logged as wrong/unsure, grouped by subject — like the
 /// คลังข้อสอบ list on Home — plus a history of past mock exam attempts,
-/// viewable read-only the same way normal practice review works.
+/// viewable read-only the same way normal practice review works. Scoped to
+/// whichever course is currently active (same course the Home tab shows),
+/// so switching courses filters this list too instead of mixing every
+/// course's mistakes/saved questions/attempts together.
 class MistakeHunterScreen extends StatefulWidget {
   const MistakeHunterScreen({super.key});
 
@@ -48,9 +51,10 @@ class _MistakeHunterScreenState extends State<MistakeHunterScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final mistakes = appState.mistakes;
-    final saved = appState.savedQuestions;
-    final attempts = appState.mockExamAttempts;
+    final courseId = appState.activeCourseId;
+    final mistakes = appState.mistakes.where((m) => m.courseId == courseId).toList();
+    final saved = appState.savedQuestions.where((s) => s.courseId == courseId).toList();
+    final attempts = appState.mockExamAttempts.where((a) => a.courseId == courseId).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
